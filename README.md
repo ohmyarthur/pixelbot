@@ -87,8 +87,8 @@ python3 pixel.py -h
 - Telegram: @durovpalsu
 
 ## Lisensi
-Pixelbot is licensed under **GNU Affero General Public License v3 or later**.
-
 [![AGPLv3](https://camo.githubusercontent.com/16f4518b01f149369b19f7aaf26d77515ddf3382a7868af8337f9ca00b89f25f/68747470733a2f2f7777772e676e752e6f72672f67726170686963732f6167706c76332d3135357835312e706e67)](./LICENSE)
+
+***Pixelbot*** is licensed under **GNU Affero General Public License v3 or later**.
 
 Lihat berkas [LICENSE](./LICENSE) untuk detail lengkap.
