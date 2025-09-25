@@ -11,11 +11,21 @@ import io
 class PixeldrainUploader:
     def __init__(self, api_key=None):
         self.api_key = api_key
+        default_headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+            )
+        }
+        auth = httpx.BasicAuth("", self.api_key) if self.api_key else None
+
         self.client = httpx.Client(
             http2=True,
             timeout=httpx.Timeout(60.0, connect=10.0),
             limits=httpx.Limits(max_keepalive_connections=20, max_connections=30),
             transport=httpx.HTTPTransport(retries=3, http2=True),
+            headers=default_headers,
+            auth=auth,
         )
 
     def upload(self, file_path, chunk_size=1024*1024):
@@ -25,9 +35,6 @@ class PixeldrainUploader:
         file_name = os.path.basename(file_path)
         file_size = os.path.getsize(file_path)
         url = "https://pixeldrain.com/api/file"
-        headers = {}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
 
         progress = tqdm(
             total=file_size,
@@ -63,7 +70,6 @@ class PixeldrainUploader:
                 }
                 response = self.client.post(
                     url,
-                    headers=headers,
                     files=files,
                     data=data,
                 )
@@ -92,11 +98,7 @@ class PixeldrainUploader:
         file_id = self._extract_id(file_id_or_url)
         url = f"https://pixeldrain.com/u/{file_id}?download"
 
-        headers = {}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-
-        with self.client.stream("GET", url, headers=headers) as r:
+        with self.client.stream("GET", url) as r:
             r.raise_for_status()
 
             if output_path is None:
