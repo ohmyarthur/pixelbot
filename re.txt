@@ -1,2 +1,3 @@
-httpx
-tqdm
+httpx[http2]
+python-dotenv>=1.1.1
+tqdm>=4.67.1
