@@ -2,11 +2,23 @@
 import os
 import httpx
 import argparse
-from tqdm import tqdm
 from dotenv import load_dotenv
 import re
 from typing import Optional
 import io
+from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+    DownloadColumn,
+)
+
+console = Console()
 
 class PixeldrainUploader:
     def __init__(self, api_key=None):
@@ -36,53 +48,63 @@ class PixeldrainUploader:
         file_size = os.path.getsize(file_path)
         url = "https://pixeldrain.com/api/file"
 
-        progress = tqdm(
-            total=file_size,
-            unit='B',
-            unit_scale=True,
-            desc=f"Uploading {file_name}",
-            ncols=100
-        )
+        columns = [
+            SpinnerColumn(spinner_name="dots"),
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(bar_width=None),
+            DownloadColumn(binary_units=True),
+            TransferSpeedColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+        ]
 
         class ProgressFileWrapper:
-            def __init__(self, fp: io.BufferedReader, progress_bar: tqdm):
+            def __init__(self, fp: io.BufferedReader, progress_obj: Progress, task_id, chunk_size: int):
                 self.fp = fp
-                self.progress = progress_bar
-
+                self.progress = progress_obj
+                self.task_id = task_id
+                self.chunk_size = chunk_size
             def read(self, amt: Optional[int] = None) -> bytes:
+                if amt is None or amt <= 0:
+                    amt = self.chunk_size
                 data = self.fp.read(amt)
                 if data:
-                    self.progress.update(len(data))
+                    self.progress.update(self.task_id, advance=len(data))
                 return data
-
+            def readinto(self, b) -> int:
+                n = self.fp.readinto(b)
+                if n and n > 0:
+                    self.progress.update(self.task_id, advance=n)
+                return n
             def __getattr__(self, name):
                 return getattr(self.fp, name)
 
         try:
-            with open(file_path, "rb") as f:
-                wrapped_fp = ProgressFileWrapper(f, progress)
-                files = {
-                    "file": (file_name, wrapped_fp, "application/octet-stream")
-                }
-                data = {
-                    "name": file_name,
-                    "anonymous": str(not bool(self.api_key)).lower(),
-                }
-                response = self.client.post(
-                    url,
-                    files=files,
-                    data=data,
-                )
-                response.raise_for_status()
-                return response.json()
+            with Progress(*columns, console=console, transient=True) as progress:
+                task = progress.add_task(f"Uploading {file_name}", total=file_size)
+                with open(file_path, "rb", buffering=chunk_size) as f:
+                    wrapped_fp = ProgressFileWrapper(f, progress, task, chunk_size)
+                    files = {
+                        "file": (file_name, wrapped_fp, "application/octet-stream")
+                    }
+                    data = {
+                        "name": file_name,
+                        "anonymous": str(not bool(self.api_key)).lower(),
+                    }
+                    response = self.client.post(
+                        url,
+                        headers={"Expect": "100-continue"},
+                        files=files,
+                        data=data,
+                    )
+                    response.raise_for_status()
+                    return response.json()
 
         except httpx.HTTPStatusError as e:
             error_msg = f"Upload gagal: {e.response.status_code} - {e.response.text}"
             raise Exception(error_msg) from e
         except Exception as e:
             raise Exception(f"Upload error: {str(e)}") from e
-        finally:
-            progress.close()
 
     def _extract_id(self, file_id_or_url: str) -> str:
         text = file_id_or_url.strip()
@@ -112,15 +134,24 @@ class PixeldrainUploader:
                     output_path = f"{file_id}.bin"
 
             total = int(r.headers.get("content-length", 0)) or None
-            progress = tqdm(total=total, unit='B', unit_scale=True, desc=f"Downloading {file_id}", ncols=100)
-            try:
+
+            columns = [
+                SpinnerColumn(spinner_name="dots"),
+                TextColumn("[bold green]Downloading {task.fields[file_id]}"),
+                BarColumn(bar_width=None),
+                DownloadColumn(binary_units=True),
+                TransferSpeedColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+            ]
+
+            with Progress(*columns, console=console, transient=True) as progress:
+                task = progress.add_task("download", total=total, file_id=file_id)
                 with open(output_path, "wb") as f:
                     for chunk in r.iter_bytes(chunk_size=chunk_size):
                         if chunk:
                             f.write(chunk)
-                            progress.update(len(chunk))
-            finally:
-                progress.close()
+                            progress.update(task, advance=len(chunk))
 
         return output_path
 
@@ -149,19 +180,19 @@ def main():
         uploader = PixeldrainUploader(api_key=api_key)
         if args.download:
             saved_path = uploader.download(args.path, output_path=args.output, chunk_size=args.chunk_size)
-            print("\n✅ Download berhasil!")
-            print(f"📁 Tersimpan: {os.path.abspath(saved_path)}")
+            console.print("\n✅ [bold green]Download berhasil![/]", highlight=False)
+            console.print(f"📁 Tersimpan: [bold]{os.path.abspath(saved_path)}[/]", highlight=False)
         else:
             result = uploader.upload(args.path, chunk_size=args.chunk_size)
-            print("\n✅ Upload berhasil!")
-            print(f"🔗 Link: https://pixeldrain.com/u/{result['id']}")
-            print(f"📁 Nama: {result['name']}")
-            print(f"📏 Ukuran: {result['size']} bytes")
+            console.print("\n✅ [bold green]Upload berhasil![/]", highlight=False)
+            console.print(f"🔗 Link: [bold cyan]https://pixeldrain.com/u/{result['id']}[/]", highlight=False)
+            console.print(f"📁 Nama: [bold]{result['name']}[/]", highlight=False)
+            console.print(f"📏 Ukuran: [bold]{result['size']} bytes[/]", highlight=False)
             if api_key:
                 owner = result.get('owner') or result.get('user') or 'N/A'
-                print(f"👤 Owner: {owner}")
+                console.print(f"👤 Owner: [bold]{owner}[/]", highlight=False)
     except Exception as e:
-        print(f"\n❌ Error: {str(e)}")
+        console.print(f"\n❌ [bold red]Error:[/] {str(e)}")
         exit(1)
 
 if __name__ == "__main__":
