@@ -164,7 +164,7 @@ def main():
     parser.add_argument('-d', '--download', action='store_true', help='Mode download (path dianggap sebagai ID/URL)')
     parser.add_argument('-o', '--output', help='Path output file hasil download (opsional)')
     parser.add_argument('-k', '--api-key', help='Pixeldrain API Key (opsional, override .env)', default=None)
-    parser.add_argument('--chunk-size', type=int, default=1024*1024, help='Ukuran chunk (byte) untuk streaming')
+    parser.add_argument('--chunk-size', type=int, default=4*1024*1024, help='Ukuran chunk (byte) untuk streaming')
     parser.add_argument('--env-file', default=None, help='Path file .env khusus (opsional)')
 
     args = parser.parse_args()
