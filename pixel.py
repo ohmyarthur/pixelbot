@@ -4,7 +4,7 @@
 #
 # This file is a part of < https://github.com/ohmyarthur/pixelbot
 #>
-# PLease read the GNU Affero General Public License in
+# Please read the GNU Affero General Public License in order to use this project.
 # <https://www.github.com/ohmyarthur/pixelbot/blob/main/LICENSE/>.
 
 
@@ -31,6 +31,18 @@ from pyrogram import Client, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 console = Console()
+
+
+def parse_bool_env(value: Optional[str], default: bool = True) -> bool:
+    if value is None or value == "":
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
 
 class PixeldrainUploader:
     def __init__(self, api_key=None):
@@ -197,6 +209,9 @@ class TelegramNotifier:
     def from_env(cls, disable: bool = False) -> "TelegramNotifier":
         if disable:
             return cls(None, None, None, None)
+        enabled_flag = parse_bool_env(os.getenv("TG_NOTIFY"), default=True)
+        if not enabled_flag:
+            return cls(None, None, None, None)
         api_id = os.getenv("TG_API_ID")
         api_hash = os.getenv("TG_API_HASH")
         bot_token = os.getenv("TG_BOT_TOKEN")
@@ -307,13 +322,23 @@ def main():
                 for fpath in files:
                     try:
                         result = uploader.upload(fpath, chunk_size=args.chunk_size)
+                        file_id = result.get('id') if isinstance(result, dict) else None
+                        name_display = (result.get('name') if isinstance(result, dict) else None) or os.path.basename(fpath)
+                        raw_size = result.get('size') if isinstance(result, dict) else None
+                        try:
+                            size_b = int(raw_size)
+                        except (TypeError, ValueError):
+                            size_b = os.path.getsize(fpath)
+                        size_h = format_size(size_b)
+
                         console.print("\n✅ [bold green]Upload berhasil![/]", highlight=False)
-                        console.print(f"🔗 Link: [bold cyan]https://pixeldrain.com/u/{result['id']}[/]", highlight=False)
-                        console.print(f"📁 Nama: [bold]{result['name']}[/]", highlight=False)
-                        console.print(f"📏 Ukuran: [bold]{result['size']} bytes[/]", highlight=False)
-                        if notifier.enabled:
-                            size_b = int(result.get('size', 0))
-                            notifier.notify_upload(result.get('name') or os.path.basename(fpath), size_b, result['id'])
+                        if file_id:
+                            console.print(f"🔗 Link: [bold cyan]https://pixeldrain.com/u/{file_id}[/]", highlight=False)
+                        console.print(f"📁 Nama: [bold]{name_display}[/]", highlight=False)
+                        console.print(f"📏 Ukuran: [bold]{size_h}[/] ({size_b} bytes)", highlight=False)
+
+                        if notifier.enabled and file_id:
+                            notifier.notify_upload(name_display, size_b, file_id)
                         ok += 1
                     except Exception as e:
                         console.print(f"\n❌ [bold red]Error upload:[/] {fpath}: {e}")
@@ -321,13 +346,23 @@ def main():
                 console.print(f"\n[bold]Ringkasan:[/] Berhasil: {ok} | Gagal: {fail}")
             else:
                 result = uploader.upload(args.path, chunk_size=args.chunk_size)
+                file_id = result.get('id') if isinstance(result, dict) else None
+                name_display = (result.get('name') if isinstance(result, dict) else None) or os.path.basename(args.path)
+                raw_size = result.get('size') if isinstance(result, dict) else None
+                try:
+                    size_b = int(raw_size)
+                except (TypeError, ValueError):
+                    size_b = os.path.getsize(args.path)
+                size_h = format_size(size_b)
+
                 console.print("\n✅ [bold green]Upload berhasil![/]", highlight=False)
-                console.print(f"🔗 Link: [bold cyan]https://pixeldrain.com/u/{result['id']}[/]", highlight=False)
-                console.print(f"📁 Nama: [bold]{result['name']}[/]", highlight=False)
-                console.print(f"📏 Ukuran: [bold]{result['size']} bytes[/]", highlight=False)
-                if notifier.enabled:
-                    size_b = int(result.get('size', 0))
-                    notifier.notify_upload(result.get('name') or os.path.basename(args.path), size_b, result['id'])
+                if file_id:
+                    console.print(f"🔗 Link: [bold cyan]https://pixeldrain.com/u/{file_id}[/]", highlight=False)
+                console.print(f"📁 Nama: [bold]{name_display}[/]", highlight=False)
+                console.print(f"📏 Ukuran: [bold]{size_h}[/] ({size_b} bytes)", highlight=False)
+
+                if notifier.enabled and file_id:
+                    notifier.notify_upload(name_display, size_b, file_id)
     except Exception as e:
         console.print(f"\n❌ [bold red]Error:[/] {str(e)}")
         exit(1)
